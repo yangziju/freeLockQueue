@@ -1,5 +1,6 @@
 #include "freeLockQueue.hpp"
 #include "lockQueue.hpp"
+#include "arrayFreeLockQue.hpp"
 #include <iostream>
 #include <pthread.h>
 #include <sys/time.h>
@@ -24,12 +25,12 @@ void* producer_th(void *arg) {
     unsigned long success = 0, fail = 0;
 
     for (int i = 1; i <= g_tasks_per_producer; i++) {
-        if (que->enqueue(i)) {
+        if (que->push(i)) {
             success++;
-            AtomicAdd(&g_push_cnt, 1);
+            atomicAdd(&g_push_cnt, 1);
         } else {
             fail++;
-            AtomicAdd(&g_fail_cnt, 1);
+            atomicAdd(&g_fail_cnt, 1);
         }
     }
     printf("[producer:%ld] push failCount: %lu, successCount: %lu, success rate: %.0lf\%\n", 
@@ -49,8 +50,8 @@ void* consumer_th(void *arg) {
     unsigned long success = 0, fail = 0;
     int data;
     while (true) {
-        if (que->dequeue(data)) {
-            AtomicAdd(&g_pop_cnt, 1);
+        if (que->pop(data)) {
+            atomicAdd(&g_pop_cnt, 1);
             success++;
             if (g_consumer_cnt == 1 && g_producer_cnt == 1) {
                 if (g_last_data + 1 != data) {
@@ -61,7 +62,7 @@ void* consumer_th(void *arg) {
                 }
                 g_last_data = data;
             }
-            do_work(100);
+            do_work(1000);
         } else {
             fail++;
         }
@@ -72,6 +73,7 @@ void* consumer_th(void *arg) {
     printf("[consumer:%ld] pop failCount: %lu, successCount: %lu, success rete: %.0lf\%\n", 
         pthread_self(), fail, success, 
         success * 1.0 / (g_tasks_per_producer * g_producer_cnt) * 100);
+
     return NULL;
 }
 
@@ -83,6 +85,7 @@ void queue_test_fn(op_fn_t producer, op_fn_t consumer, T &que, string str) {
     g_last_data = 0;
     g_push_cnt = 0;
     g_pop_cnt = 0;
+    g_fail_cnt = 0;
     p_tid = (pthread_t*)malloc(g_producer_cnt * sizeof(pthread_t));
     c_tid = (pthread_t*)malloc(g_consumer_cnt * sizeof(pthread_t));
     assert(p_tid && c_tid);
@@ -125,15 +128,18 @@ int main(int argc, char **argv)
     }
     g_producer_cnt = atoi(argv[1]);
     g_consumer_cnt = atoi(argv[2]);
-    g_tasks_per_producer = atoi(argv[3]);
+    g_tasks_per_producer = atoi(argv[3]) / g_producer_cnt;
+
+    lockQueue<int> lockQue(QUEUE_DEFAULT_SIZE);
+    queue_test_fn<lockQueue<int>>(producer_th<lockQueue<int>>, 
+                consumer_th<lockQueue<int>>, lockQue, "lockQueue");
 
     freeLockQueue<int> que;
     queue_test_fn<freeLockQueue<int>>(producer_th<freeLockQueue<int>>, 
                 consumer_th<freeLockQueue<int>>, que, "freeLockQueue");
     
-    lockQueue<int> lockQue(QUEUE_DEFAULT_SIZE);
-    queue_test_fn<lockQueue<int>>(producer_th<lockQueue<int>>, 
-                consumer_th<lockQueue<int>>, lockQue, "lockQueue");
-
+    ArrayLockFreeQueue<int> afq;
+    queue_test_fn<ArrayLockFreeQueue<int>>(producer_th<ArrayLockFreeQueue<int>>, 
+                consumer_th<ArrayLockFreeQueue<int>>, afq, "arrayFreeLockQueue");
     return 0;
 }

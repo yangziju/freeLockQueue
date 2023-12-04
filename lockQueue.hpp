@@ -9,8 +9,8 @@ public:
     lockQueue(unsigned long size);
     ~lockQueue();
 
-    bool enqueue(const T &data);
-    bool dequeue(T &data);
+    bool push(const T &data);
+    bool pop(T &data);
 
 private:
     unsigned long m_front;
@@ -18,6 +18,7 @@ private:
 
     unsigned long m_capacity;
     std::mutex m_lock;
+    pthread_mutex_t m_mutex;
     T* m_ringBuff;
     inline unsigned long toIdx(unsigned long idx);
 };
@@ -25,7 +26,8 @@ private:
 template<typename T>
 lockQueue<T>::lockQueue(unsigned long size):
     m_back(0), m_front(0),
-    m_capacity(size + 1) {
+    m_capacity(size + 1),
+    m_mutex(PTHREAD_MUTEX_INITIALIZER) {
     m_ringBuff = new T[size + 1];
 }
 
@@ -35,24 +37,30 @@ lockQueue<T>::~lockQueue() {
 }
 
 template<typename T>
-bool lockQueue<T>::enqueue(const T &data) {
+bool lockQueue<T>::push(const T &data) {
     std::lock_guard<std::mutex> gd(m_lock);
+    // pthread_mutex_lock(&m_mutex);
     if (toIdx(m_back + 1) == m_front) {
+        // pthread_mutex_unlock(&m_mutex);
         return false;
     }
     m_ringBuff[m_back] = data;
     m_back = toIdx(m_back + 1);
+    // pthread_mutex_unlock(&m_mutex);
     return true;
 }
 
 template<typename T>
-bool lockQueue<T>::dequeue(T &data) {
+bool lockQueue<T>::pop(T &data) {
     std::lock_guard<std::mutex> gd(m_lock);
+    // pthread_mutex_lock(&m_mutex);
     if (m_front == m_back) {
+        // pthread_mutex_unlock(&m_mutex);
         return false;
     }
     data = m_ringBuff[m_front];
     m_front = toIdx(m_front + 1);
+    // pthread_mutex_unlock(&m_mutex);
     return true;
 }
 

@@ -7,8 +7,8 @@
 #define QINT unsigned long
 
 #define CAS(a_ptr, a_oldVal, a_newVal) __sync_bool_compare_and_swap(a_ptr, a_oldVal, a_newVal)
-#define AtomicAdd(a_ptr, a_count) __sync_fetch_and_add (a_ptr, a_count)
-#define AtomicSub(a_ptr, a_count) __sync_fetch_and_sub (a_ptr, a_count)
+#define atomicAdd(a_ptr, a_count) __sync_fetch_and_add (a_ptr, a_count)
+#define atomicSub(a_ptr, a_count) __sync_fetch_and_sub (a_ptr, a_count)
 
 template<typename T, QINT Q_SIZE = QUEUE_DEFAULT_SIZE>
 class freeLockQueue {
@@ -17,8 +17,8 @@ public:
     ~freeLockQueue();
 
     QINT get_count();
-    bool enqueue(const T &data);
-    bool dequeue(T &data);
+    bool push(const T &data);
+    bool pop(T &data);
     bool try_dequeue(T &data);
 
 private:
@@ -45,7 +45,7 @@ freeLockQueue<T, Q_SIZE>::~freeLockQueue() {
 }
 
 template<typename T, QINT Q_SIZE>
-bool freeLockQueue<T, Q_SIZE>::enqueue(const T &data) {
+bool freeLockQueue<T, Q_SIZE>::push(const T &data) {
     QINT currWriteIdx = m_writeIdx;
 
     // 先更新 ++m_writeIdx
@@ -75,13 +75,13 @@ bool freeLockQueue<T, Q_SIZE>::enqueue(const T &data) {
         sched_yield(); 
     }
 
-    AtomicAdd(&m_count, 1);
+    atomicAdd(&m_count, 1);
 
     return true;
 }
 
 template<typename T, QINT Q_SIZE>
-bool freeLockQueue<T, Q_SIZE>::dequeue(T &data) {
+bool freeLockQueue<T, Q_SIZE>::pop(T &data) {
     QINT currRreadIdx = m_readIdx;
 
     // 先更新 ++m_readIdx
@@ -93,10 +93,11 @@ bool freeLockQueue<T, Q_SIZE>::dequeue(T &data) {
             return false;
         }
 
+        data = m_ringBuff[currRreadIdx];
+
     } while(!CAS(&m_readIdx, currRreadIdx, toIdx(currRreadIdx + 1)));
 
-    data = m_ringBuff[currRreadIdx];
-    AtomicSub(&m_count, 1);
+    atomicSub(&m_count, 1);
 
     return true;
 }
@@ -106,7 +107,7 @@ bool freeLockQueue<T, Q_SIZE>::try_dequeue(T &data) {
     if (m_count == Q_SIZE - 1)
         return false;
 
-    dequeue(data);
+    pop(data);
 
     return true;
 }
